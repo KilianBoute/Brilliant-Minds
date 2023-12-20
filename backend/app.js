@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import http from "http";
 import { fileURLToPath } from "url";
+import cors from "cors";
 
 dotenv.config();
 
@@ -16,7 +17,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 app.use(express.json());
-
+app.use(cors());
 app.use(express.static(path.join(__dirname, "../frontend")));
 
 const pool = mariadb.createPool({
@@ -34,16 +35,7 @@ app.get("/ideas", async (req, res) => {
     connection = await pool.getConnection();
     const data = await connection.query(`SELECT * FROM ideas`);
 
-    const dir = path.join(__dirname, "../frontend/index.html");
-    const htmlContent = fs.readFileSync(dir, "utf8");
-
-    // Replace a placeholder in your HTML file with the actual data
-    const modifiedHtml = htmlContent.replace(
-      "<!-- data-placeholder -->",
-      JSON.stringify(data)
-    );
-
-    res.send(modifiedHtml);
+    res.json(data);
   } catch (err) {
     console.error("Error connecting to MariaDB:", err);
   } finally {
@@ -87,9 +79,61 @@ app.get("/ideas/delete", (req, res) => {
   }
 });
 
-const startServer = async () => {
+app.post("/create", async (req, res) => {
+  let connection;
   try {
-    app.listen(PORT, () => {
+    // Extract data from the request body
+    const { title, description } = req.body;
+    console.log(title, description);
+
+    // Check if both title and description are present
+    if (!title || !description) {
+      return res
+        .status(400)
+        .json({ error: "Title and description are required" });
+    }
+
+    connection = await pool.getConnection();
+
+    const result = await connection.query(
+      "INSERT INTO ideas (title, description) VALUES (?, ?)",
+      [title, description]
+    );
+  } catch (err) {
+    console.error("Error creating idea:", err);
+
+    // Send an error response with a generic message
+    res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    if (connection) connection.end();
+  }
+});
+
+app.delete("/ideas/:id", async (req, res) => {
+  let connection;
+  try {
+    const ideaId = req.params.id;
+
+    connection = await pool.getConnection();
+
+    // Delete the idea with the given ID
+    const deleteResult = await connection.query(
+      "DELETE FROM ideas WHERE id = ?",
+      [ideaId]
+    );
+  } catch (err) {
+    console.error("Error deleting idea:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    if (connection) connection.end();
+  }
+});
+
+const startServer = async () => {
+  //let connection;
+  try {
+    app.listen(PORT, async () => {
+      // connection = await pool.getConnection();
       console.log(`App started on http://${HOST}:${PORT}`);
       console.log(new Date());
     });
